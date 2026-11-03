@@ -2,19 +2,37 @@ import type { Env } from "./types";
 
 export interface CloudflareConfig {
   domain: string;
+  domains: string[];
+  defaultDomain: string;
   emailTtlSeconds: number;
   maxEmailSizeMb: number;
 }
 
-/**
- * Build the runtime config for the Worker from its bindings.
- *
- * Defaults intentionally match `packages/server/src/config.ts` so the same
- * environment variables produce identical behavior on Docker and Cloudflare.
- */
+export function getDomains(env: Env): string[] {
+  const domains = (env.DOMAINS || env.DOMAIN || "localhost")
+    .split(",")
+    .map((domain) => domain.trim().toLowerCase())
+    .filter(Boolean);
+
+  return [...new Set(domains)];
+}
+
+export function getDefaultDomain(env: Env): string {
+  const domains = getDomains(env);
+  const configuredDefault = env.DEFAULT_DOMAIN?.trim().toLowerCase();
+
+  return configuredDefault && domains.includes(configuredDefault)
+    ? configuredDefault
+    : domains[0];
+}
+
 export function getConfig(env: Env): CloudflareConfig {
+  const domains = getDomains(env);
+
   return {
-    domain: env.DOMAIN || "localhost",
+    domain: getDefaultDomain(env),
+    domains,
+    defaultDomain: getDefaultDomain(env),
     emailTtlSeconds: Number(env.EMAIL_TTL_SECONDS) || 86400,
     maxEmailSizeMb: Number(env.MAX_EMAIL_SIZE_MB) || 10,
   };

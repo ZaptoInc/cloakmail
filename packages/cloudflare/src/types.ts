@@ -34,6 +34,8 @@ export interface Env {
   DB: D1Database;
   R2: R2Bucket;
   DOMAIN: string;
+  DOMAINS?: string;
+  DEFAULT_DOMAIN?: string;
   EMAIL_TTL_SECONDS: string;
   MAX_EMAIL_SIZE_MB: string;
 }

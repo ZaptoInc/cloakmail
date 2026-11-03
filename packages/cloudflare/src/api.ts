@@ -1,3 +1,4 @@
+import { getDomains, getDefaultDomain } from "./config";
 import { Hono } from "hono";
 import type { Env } from "./types";
 import {
@@ -25,6 +26,17 @@ const BOOT_TIME_MS = Date.now();
 export function createApiApp(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
 
+  // List available email domains
+  app.get("/api/domains", (c) => {
+    const domains = getDomains(c.env);
+    const defaultDomain = getDefaultDomain(c.env);
+
+    return c.json({
+      domains,
+      defaultDomain,
+    });
+  });
+  
   app.get("/api/inbox/:address", async (c) => {
     const address = c.req.param("address");
     const page = Number(c.req.query("page")) || 1;
