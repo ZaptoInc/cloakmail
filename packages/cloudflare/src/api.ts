@@ -1,6 +1,7 @@
 import { getDomains, getDefaultDomain } from "./config";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { Env } from "./types";
+import { generateRandomPrefix, isValidPrefix, randomInt } from "./utils/prefix";
 import {
   deleteEmail,
   deleteInbox,
@@ -36,7 +37,59 @@ export function createApiApp(): Hono<{ Bindings: Env }> {
       defaultDomain,
     });
   });
-  
+
+  // Génère une adresse. En POST, `prefix` et/ou `domain` peuvent être imposés
+  // dans le corps JSON ; ce qui manque est choisi automatiquement
+  // (prefix aléatoire, domaine tiré au hasard parmi les domaines configurés).
+  const generateAddress = async (c: Context<{ Bindings: Env }>) => {
+    let body: { prefix?: unknown; domain?: unknown } = {};
+
+    if (c.req.method === "POST") {
+      const raw = await c.req.text();
+      if (raw.trim()) {
+        try {
+          body = JSON.parse(raw);
+        } catch {
+          return c.json({ error: "Invalid JSON body" }, 400);
+        }
+        if (typeof body !== "object" || body === null || Array.isArray(body)) {
+          return c.json({ error: "Body must be a JSON object" }, 400);
+        }
+      }
+    }
+
+    const domains = getDomains(c.env);
+
+    let domain: string;
+    if (body.domain === undefined || body.domain === null || body.domain === "") {
+      domain = domains[randomInt(domains.length)];
+    } else if (typeof body.domain !== "string") {
+      return c.json({ error: "domain must be a string" }, 400);
+    } else {
+      domain = body.domain.trim().toLowerCase();
+      if (!domains.includes(domain)) {
+        return c.json({ error: "Unknown domain", domains }, 400);
+      }
+    }
+
+    let prefix: string;
+    if (body.prefix === undefined || body.prefix === null || body.prefix === "") {
+      prefix = generateRandomPrefix();
+    } else if (typeof body.prefix !== "string") {
+      return c.json({ error: "prefix must be a string" }, 400);
+    } else {
+      prefix = body.prefix.trim().toLowerCase();
+      if (!isValidPrefix(prefix)) {
+        return c.json({ error: "Invalid prefix" }, 400);
+      }
+    }
+
+    return c.json({ prefix, domain, address: `${prefix}@${domain}` });
+  };
+
+  app.get("/api/address", generateAddress);
+  app.post("/api/address", generateAddress);
+
   app.get("/api/inbox/:address", async (c) => {
     const address = c.req.param("address");
     const page = Number(c.req.query("page")) || 1;

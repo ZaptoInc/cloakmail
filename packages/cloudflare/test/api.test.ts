@@ -195,3 +195,73 @@ describe("DELETE /api/inbox/:address", () => {
     expect(inbox.json.emails).toHaveLength(0);
   });
 });
+
+describe("/api/address", () => {
+  const multiEnv = { ...env, DOMAINS: "a.test,b.test", DEFAULT_DOMAIN: "a.test" };
+
+  async function post(body: unknown, targetEnv: object = multiEnv) {
+    const res = await app.fetch(
+      new Request("https://api.local/api/address", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: typeof body === "string" ? body : JSON.stringify(body),
+      }),
+      targetEnv,
+    );
+    return { status: res.status, json: (await res.json()) as any };
+  }
+
+  test("GET returns a random prefix and a configured domain", async () => {
+    const { status, json } = await call("/api/address");
+    expect(status).toBe(200);
+    expect(json.domain).toBe("test.local");
+    expect(json.prefix).toMatch(/^[a-z]+\.[a-z]+\d{1,4}$/);
+    expect(json.address).toBe(`${json.prefix}@${json.domain}`);
+  });
+
+  test("POST with empty body picks both automatically", async () => {
+    const { status, json } = await post("");
+    expect(status).toBe(200);
+    expect(["a.test", "b.test"]).toContain(json.domain);
+    expect(json.prefix).toMatch(/^[a-z]+\.[a-z]+\d{1,4}$/);
+  });
+
+  test("POST with prefix only keeps it and picks a domain", async () => {
+    const { status, json } = await post({ prefix: "  My.Name+tag " });
+    expect(status).toBe(200);
+    expect(json.prefix).toBe("my.name+tag");
+    expect(["a.test", "b.test"]).toContain(json.domain);
+  });
+
+  test("POST with domain only keeps it and generates a prefix", async () => {
+    const { status, json } = await post({ domain: "B.TEST" });
+    expect(status).toBe(200);
+    expect(json.domain).toBe("b.test");
+    expect(json.address).toBe(`${json.prefix}@b.test`);
+  });
+
+  test("POST with both returns them as-is", async () => {
+    const { json } = await post({ prefix: "hello", domain: "a.test" });
+    expect(json).toEqual({ prefix: "hello", domain: "a.test", address: "hello@a.test" });
+  });
+
+  test("rejects an unknown domain", async () => {
+    const { status, json } = await post({ domain: "evil.com" });
+    expect(status).toBe(400);
+    expect(json.domains).toEqual(["a.test", "b.test"]);
+  });
+
+  test.each(["a@b", "-start", "end.", "dou..ble", "x".repeat(65), "spa ce"])(
+    "rejects invalid prefix %s",
+    async (prefix) => {
+      const { status } = await post({ prefix });
+      expect(status).toBe(400);
+    },
+  );
+
+  test("rejects malformed JSON and non-object bodies", async () => {
+    expect((await post("{nope")).status).toBe(400);
+    expect((await post([1])).status).toBe(400);
+    expect((await post({ prefix: 42 })).status).toBe(400);
+  });
+});
